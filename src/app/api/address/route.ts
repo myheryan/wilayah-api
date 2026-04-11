@@ -9,7 +9,9 @@ export async function GET(request: Request) {
   try {
     switch (type) {
       case "provinces":
-        const provinces = await prisma.province.findMany({ orderBy: { name: "asc" } });
+        const provinces = await prisma.province.findMany({ 
+          orderBy: { name: "asc" } 
+        });
         return NextResponse.json(provinces);
 
       case "cities":
@@ -24,10 +26,40 @@ export async function GET(request: Request) {
         if (!id) return NextResponse.json([]);
         const districts = await prisma.district.findMany({
           where: { cityId: Number(id) },
+          include: {
+            subDistricts: {
+              select: {
+                name: true,
+                postalCode: true,
+              },
+            },
+          },
           orderBy: { name: "asc" },
-          select: { id: true, name: true, lionDistrictId: true },
         });
-        return NextResponse.json(districts);
+
+        const districtsWithPostal = districts.map((d) => {
+          // Format menjadi "Kodepos - Nama Kelurahan"
+          const options = d.subDistricts
+            .filter((sd) => sd.postalCode && sd.name)
+            .map((sd) => `${sd.postalCode} - ${sd.name}`);
+          
+          // Mengambil kodepos unik (angka saja) untuk default value
+          const uniquePureCodes = Array.from(
+            new Set(d.subDistricts.map((sd) => sd.postalCode).filter(Boolean))
+          );
+
+          return {
+            id: d.id,
+            name: d.name,
+            lionDistrictId: d.lionDistrictId,
+            // Default: ambil angka kodepos pertama
+            postalCode: uniquePureCodes[0] || "", 
+            // List untuk dropdown: "40217 - Nama Daerah"
+            postalOptions: options, 
+          };
+        });
+
+        return NextResponse.json(districtsWithPostal);
 
       case "subdistricts":
         if (!id) return NextResponse.json([]);
@@ -42,6 +74,7 @@ export async function GET(request: Request) {
         return NextResponse.json({ message: "Invalid type" }, { status: 400 });
     }
   } catch (error) {
+    console.error("Database Error:", error);
     return NextResponse.json({ error: "Server Error" }, { status: 500 });
   }
 }
